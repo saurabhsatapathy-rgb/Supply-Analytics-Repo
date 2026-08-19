@@ -27,8 +27,8 @@
         from prod.streams_delta.growth_campaign_crud_event
     ) x
     where rn = 1
-    and to_date(from_unixtime(start_time)) <= current_date
-    and to_date(from_unixtime(end_time)) > current_date
+       AND FROM_UNIXTIME(start_time) <= current_timestamp
+            AND FROM_UNIXTIME(end_time) >= current_timestamp
     and campaign_status = 'Growth_CAMPAIGN_STATUS_ACTIVE'
     -- and consent_status = 'Growth_CAMPAIGN_CONSENT_STATUS_APPROVED'
     and smart_discount_enabled = true
