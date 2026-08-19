@@ -30,7 +30,7 @@
     and to_date(from_unixtime(start_time)) <= current_date
     and to_date(from_unixtime(end_time)) > current_date
     and campaign_status = 'Growth_CAMPAIGN_STATUS_ACTIVE'
-    and consent_status = 'Growth_CAMPAIGN_CONSENT_STATUS_APPROVED'
+    -- and consent_status = 'Growth_CAMPAIGN_CONSENT_STATUS_APPROVED'
     and smart_discount_enabled = true
 
 
