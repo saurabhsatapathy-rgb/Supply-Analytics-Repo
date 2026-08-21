@@ -90,11 +90,25 @@ SELECT
 FROM latest
 ORDER BY campaign_id, run_date, store_id, segment, slot;
 
-
-
+--=============================================================================================
 
 WITH rid_list AS (
-    SELECT distinct _c0 as restaurant_id from prod.analytics_adhoc.orion_rid --a
+    select distinct store_ids[0] as store_id
+    from (
+        select
+            *,
+            row_number() over (
+                partition by id
+                order by dt desc, hr desc, updated_at desc
+            ) as rn
+        from prod.streams_delta.growth_campaign_crud_event
+    ) x
+    where rn = 1
+       AND FROM_UNIXTIME(start_time) <= current_timestamp
+            AND FROM_UNIXTIME(end_time) >= current_timestamp
+    and campaign_status = 'Growth_CAMPAIGN_STATUS_ACTIVE'
+    -- and consent_status = 'Growth_CAMPAIGN_CONSENT_STATUS_APPROVED'
+    and smart_discount_enabled = true
 ),
 
 customer_tiers AS (
@@ -139,8 +153,8 @@ from
         sum(ITEM_TOTAL) as cart_value,
         sum(coupon_discount_total) as coupon_discount,
         sum(fp_store_discount) + sum(fp_swiggy_discount) as fvo_discount_total
-    FROM prod.analytics_prod.analytics_public_pockethero_cart_fact_v2_filtered_14th_to_19th_v2 c
-    WHERE c.dt >= '2026-08-15'
+    FROM prod.analytics_prod.analytics_public_pockethero_cart_fact_v2_filtered_14th_to_19th_v2 c -- this is adhock iceberg table, make sure to refresh this for required dates before using
+    WHERE c.dt >= '2026-08-15' 
       AND c.dt <=  '2026-08-19'
       AND c.restaurant_id IN (SELECT restaurant_id FROM rid_list)
       group by all
@@ -207,4 +221,4 @@ JOIN cart_rtr r
     AND r.original_cart_id = a.original_cart_id
 GROUP BY ALL) a
 join analytics_adhoc.bs_orion_tier_mapping b on a.dt = b.run_date and a.restaurant_id = b.store_id and a.segment = b.segment and a.rtr_ntr = b.store_seg and a.slot = b.slot
-group by all;
+group by all
