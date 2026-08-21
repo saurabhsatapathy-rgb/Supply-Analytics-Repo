@@ -32,7 +32,3 @@
     and campaign_status = 'Growth_CAMPAIGN_STATUS_ACTIVE'
     -- and consent_status = 'Growth_CAMPAIGN_CONSENT_STATUS_APPROVED'
     and smart_discount_enabled = true
-
-
-
-    --Growth_CAMPAIGN_CONSENT_STATUS_APPROVED
