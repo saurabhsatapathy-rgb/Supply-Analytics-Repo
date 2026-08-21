@@ -1,0 +1,12 @@
+SELECT
+    store_id,
+    status,
+    updated_at,
+    updated_by,
+    ROW_NUMBER() OVER (
+        PARTITION BY store_id
+        ORDER BY updated_at DESC
+    ) AS rn
+FROM prod.streams_delta.orion_store_crud_event
+QUALIFY rn = 1
+    AND status = true
