@@ -1,0 +1,85 @@
+WITH rid_list AS (
+    select distinct store_ids[0] as store_id
+    from (
+        select
+            *,
+            row_number() over (
+                partition by id
+                order by dt desc, hr desc, updated_at desc
+            ) as rn
+        from prod.streams_delta.growth_campaign_crud_event
+    ) x
+    where rn = 1
+       AND FROM_UNIXTIME(start_time) <= current_timestamp
+            AND FROM_UNIXTIME(end_time) >= current_timestamp
+    and campaign_status = 'Growth_CAMPAIGN_STATUS_ACTIVE'
+    and smart_discount_enabled = true
+),
+
+customer_tiers AS (
+    SELECT
+        a.customer_id,
+        dt,
+        CASE
+            when b.customer_id is not null then 'S7_orion'
+            WHEN tier IN ('P1A','P1B','P1C','P1D') THEN 'S1_orion'
+            WHEN tier = 'P1_P'                     THEN 'S2_orion'
+            WHEN tier = 'P2'                       THEN 'S3_orion'
+            WHEN tier = 'P2_P'                     THEN 'S4_orion'
+            WHEN tier = 'P3'                       THEN 'S5_orion'
+            WHEN tier = 'P3_P'                     THEN 'S6_orion'
+            ELSE 'Orion_unclassified_1'
+        END AS customer_segment
+    FROM prod.analytics_prod.ANALYTICS_PUBLIC_CUSTOMER_TIERS_V2 a
+    left join (SELECT
+    distinct customer_id
+FROM dev.data_science_prod.orion_customer_pstar_segment_test
+WHERE segment IN ('S7_orion') AND dt = (SELECT MAX(dt)
+FROM dev.data_science_prod.orion_customer_pstar_segment_test)
+) b on a.CUSTOMER_ID = b.customer_id
+    WHERE dt = '2026-08-01'
+),
+
+post_metrics as (
+    select dt,
+    store_id,
+    customer_id,
+    count(distinct order_id) as completed_orders,
+    count(distinct case when cdgmv>0 then order_id end) as discounted_orders,
+    sum(gmv) as gmv,
+    sum(cdgmv) as cdgmv,
+    sum(rdgmv) as rdgmv,
+    sum(sdgmv) as sdgmv
+    from
+    (SELECT a.dt,
+    a.restaurant_id AS store_id,
+    a.order_id,
+    b.gmv_total as gmv,
+    customer_id,
+    SUM(COALESCE(a.store_discount, 0))  AS rdgmv,
+    SUM(COALESCE(a.swiggy_discount, 0)) AS sdgmv,
+    SUM(COALESCE(a.store_discount, 0))+ SUM(COALESCE(a.swiggy_discount, 0)) as cdgmv
+    FROM prod.analytics_prod.cp_order_offer a
+    join fact.dp_order_fact b on a.order_id = b.order_id and a.dt = b.dt
+    where to_date(a.dt) between '2026-08-21' and '2026-08-22'
+    and a.order_status = 'completed'
+    and (b.toing_order_flag = '0' or b.toing_order_flag is null)
+    and b.ignore_order_flag = 0
+    and city_code <> '10000'
+    GROUP BY all)
+    group by all
+)
+
+select
+b.dt,
+coalesce(c.customer_segment,'Orion_unclassified_1') as customer_segment,
+sum(completed_orders) as completed_orders,
+sum(discounted_orders) as discounted_orders,
+sum(gmv) as gmv,
+sum(cdgmv) as cdgmv,
+sum(sdgmv) as sdgmv,
+sum(rdgmv) as rdgmv
+from rid_list a
+join post_metrics b on a.store_id = b.store_id
+left join customer_tiers c on b.customer_id = c.customer_id
+group by all
