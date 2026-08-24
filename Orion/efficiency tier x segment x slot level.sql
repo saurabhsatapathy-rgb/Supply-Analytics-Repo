@@ -1,4 +1,4 @@
--- new one fixed 
+
 CREATE OR REPLACE TABLE analytics_adhoc.bs_orion_tier_mapping AS
 WITH parsed AS (
   SELECT
@@ -122,13 +122,13 @@ FROM dev.data_science_prod.orion_customer_pstar_segment_test)
 
 
 select run_date,
-a.store_id, tier, mode, segment,
-sum(cdgmv) as cdgmv,
-sum(rdgmv) rdgmv,
-sum(sdgmv) as sdgmv,
-sum(gmv) as gmv,
-sum(completed_orders) as completed_orders,
-sum(discounted_orders) as discounted_orders
+a.store_id, tier, mode, segment, a.slot,
+sum(b.cdgmv) as cdgmv,
+sum(b.rdgmv) rdgmv,
+sum(b.sdgmv) as sdgmv,
+sum(b.gmv) as gmv,
+sum(b.completed_orders) as completed_orders,
+sum(b.discounted_orders) as discounted_orders
 from
 (select
 distinct
@@ -141,13 +141,14 @@ CASE
     WHEN split(pack_id, '_')[1] = 'C' THEN '2_C'
     WHEN split(pack_id, '_')[1] = 'P' THEN '1_P'
     ELSE split(pack_id, '_')[1]
-END AS mode
+END AS mode,slot
 from analytics_adhoc.bs_orion_tier_mapping
 where run_date between '2026-08-07' and '2026-08-11'
 ) a
 left join
 (select dt, 
     store_id, 
+    slot,
     COALESCE(customer_segment, 'Orion_unclassified_1') AS customer_segment,
     count(distinct order_id) as completed_orders,
     count(distinct case when cdgmv>0 then order_id end) as discounted_orders,
@@ -155,10 +156,14 @@ left join
     sum(cdgmv) as cdgmv,
     sum(rdgmv) as rdgmv,
     sum(sdgmv) as sdgmv
+
     from
     (SELECT a.dt,
     a.restaurant_id AS store_id,
     a.order_id,
+         case when hr between  11 and 15 then 'lunch'
+            when hr between  16 and 22 then 'snacks_dinner'
+            else 'latenight_breakfast' end as slot,
     b.gmv_total as gmv,
     COALESCE(ct.customer_segment, 'Orion_unclassified_1') AS customer_segment,
     -- sum(coalesce(a.total_offer_discount,0)) as cdgmv,
@@ -174,9 +179,9 @@ left join
     and (b.toing_order_flag = '0' or b.toing_order_flag is null)
     and b.ignore_order_flag = 0
     and city_code <> '10000'
-    GROUP BY all) group by all) b on a.store_id = b.store_id and a.segment = b.customer_segment and a.run_date = b.dt
+    GROUP BY all) group by all) b on a.store_id = b.store_id and a.segment = b.customer_segment and a.run_date = b.dt and a.slot = b.slot
 
     group by all
-    HAVING  sum(gmv) >0;
+    HAVING  sum(b.gmv) >0;
  
 
