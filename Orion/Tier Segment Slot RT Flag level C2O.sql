@@ -92,26 +92,27 @@ ORDER BY campaign_id, run_date, store_id, segment, slot;
 
 --=============================================================================================
 
-WITH rid_list AS (
-    select distinct store_ids[0] as store_id
-    from (
-        select
-            *,
-            row_number() over (
-                partition by id
-                order by dt desc, hr desc, updated_at desc
-            ) as rn
-        from prod.streams_delta.growth_campaign_crud_event
-    ) x
-    where rn = 1
-       AND FROM_UNIXTIME(start_time) <= current_timestamp
-            AND FROM_UNIXTIME(end_time) >= current_timestamp
-    and campaign_status = 'Growth_CAMPAIGN_STATUS_ACTIVE'
-    -- and consent_status = 'Growth_CAMPAIGN_CONSENT_STATUS_APPROVED'
-    and smart_discount_enabled = true
-),
+-- WITH 
+--   rid_list AS (
+--     select distinct store_ids[0] as store_id
+--     from (
+--         select
+--             *,
+--             row_number() over (
+--                 partition by id
+--                 order by dt desc, hr desc, updated_at desc
+--             ) as rn
+--         from prod.streams_delta.growth_campaign_crud_event
+--     ) x
+--     where rn = 1
+--        AND FROM_UNIXTIME(start_time) <= current_timestamp
+--             AND FROM_UNIXTIME(end_time) >= current_timestamp
+--     and campaign_status = 'Growth_CAMPAIGN_STATUS_ACTIVE'
+--     -- and consent_status = 'Growth_CAMPAIGN_CONSENT_STATUS_APPROVED'
+--     and smart_discount_enabled = true
+-- ),
 
-customer_tiers AS (
+with customer_tiers AS (
     SELECT
         customer_id,
         dt,
@@ -156,7 +157,6 @@ from
     FROM prod.analytics_prod.analytics_public_pockethero_cart_fact_v2_filtered_14th_to_19th_v2 c -- this is adhock iceberg table, make sure to refresh this for required dates before using
     WHERE c.dt >= '2026-08-15' 
       AND c.dt <=  '2026-08-19'
-      AND c.restaurant_id IN (SELECT restaurant_id FROM rid_list)
       group by all
       )
 ),
@@ -173,7 +173,7 @@ prior_orders AS (
       AND ignore_order_flag = 0
       AND COALESCE(toing_order_flag, 0) = 0
       AND post_status = 'Completed'
-      AND restaurant_id IN (SELECT restaurant_id FROM rid_list)
+      
 ),
 
 -- one row per cart: did this customer order from THIS rx in the prior 90 days?
