@@ -1,3 +1,98 @@
+CREATE OR REPLACE TABLE analytics_adhoc.bs_orion_tier_mapping AS
+WITH parsed AS (
+  SELECT
+    campaign_id,
+    run_date,
+    run_ts,
+    prev_burn_state,
+    from_json(campaign_context, 'STRUCT<
+      burn: STRUCT<
+        actual_cdgmv_pct: DOUBLE,
+        agreed_cdgmv_pct: DOUBLE,
+        cumulative_gmv: DOUBLE,
+        cumulative_rdgmv: DOUBLE,
+        cumulative_sdgmv: DOUBLE,
+        lower_cdgmv_tol: DOUBLE,
+        total_burn: DOUBLE,
+        upper_cdgmv_tol: DOUBLE
+      >,
+      stores: ARRAY<STRUCT<
+        store_id: STRING,
+        pack_selections: ARRAY<STRUCT<
+          emit_segment: STRING,
+          pack_id: STRING,
+          segment: STRING,
+          slot: STRING,
+          store_seg: STRING
+        >>
+      >>
+    >') AS ctx
+  FROM dev.data_science_dev.orion_rule_engine_campaign_state
+  WHERE campaign_context IS NOT NULL
+    AND run_date >= '2026-07-09'
+),
+exploded AS (
+  SELECT
+    campaign_id,
+    run_date,
+    run_ts,
+    prev_burn_state,
+    store.store_id,
+    ps.pack_id,
+    ps.segment,
+    ps.store_seg,
+    ps.slot,
+    ps.emit_segment,
+    ctx.burn.actual_cdgmv_pct,
+    ctx.burn.agreed_cdgmv_pct,
+    ctx.burn.cumulative_gmv,
+    ctx.burn.cumulative_rdgmv,
+    ctx.burn.cumulative_sdgmv,
+    ctx.burn.lower_cdgmv_tol,
+    ctx.burn.total_burn,
+    ctx.burn.upper_cdgmv_tol
+  FROM parsed
+  LATERAL VIEW explode(ctx.stores) AS store
+  LATERAL VIEW explode(store.pack_selections) AS ps
+),
+latest AS (
+  SELECT *
+  FROM (
+    SELECT
+      *,
+      ROW_NUMBER() OVER (
+        PARTITION BY campaign_id, run_date, store_id, segment, store_seg, pack_id, slot, emit_segment
+        ORDER BY run_ts DESC
+      ) AS rn
+    FROM exploded
+  )
+  WHERE rn = 1
+)
+SELECT
+  campaign_id,
+  run_date,
+  run_ts,
+  prev_burn_state,
+  store_id,
+  pack_id,
+  segment,
+  store_seg,
+  slot,
+  emit_segment,
+  actual_cdgmv_pct,
+  agreed_cdgmv_pct,
+  cumulative_gmv,
+  cumulative_rdgmv,
+  cumulative_sdgmv,
+  lower_cdgmv_tol,
+  total_burn,
+  upper_cdgmv_tol
+FROM latest
+ORDER BY campaign_id, run_date, store_id, segment, slot;
+
+--=============================================================================================
+
+
 WITH customer_tiers AS (
     SELECT
         customer_id,
