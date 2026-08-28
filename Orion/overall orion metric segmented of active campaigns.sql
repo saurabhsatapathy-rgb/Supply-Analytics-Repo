@@ -6,7 +6,6 @@ select distinct store_id
         store_ids,
         absolute_rdgmv_budget,
         absolute_sdgmv_budget,
-        updated_by,
         smart_discount_enabled,
         updated_by,
         from_unixtime(updated_at) as updated_at,
