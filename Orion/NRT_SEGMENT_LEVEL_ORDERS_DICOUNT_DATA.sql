@@ -108,6 +108,29 @@ FROM dev.data_science_prod.orion_customer_pstar_segment_test)
     WHERE dt = '2026-08-01' -- This should be month start date if all dates are from same month
 ),
 
+offer_lock_meta AS
+    (
+    SELECT offer_id, orion_lock, is_dnt,
+    COALESCE(MAX(CASE WHEN CAST(tag.value AS STRING)='NBH_OFFER' THEN 1 ELSE 0 END),0) AS is_nbh
+    FROM (
+    SELECT offer_id,
+    COALESCE((CASE WHEN LOWER(orion_lock)='true' THEN 1 ELSE 0 END),0) AS orion_lock,
+    CASE WHEN LOWER(orion_lock)='false' OR orion_lock IS NULL OR orion_lock=''
+              OR ((SIZE(store_ids)>0
+                   AND (CASE WHEN city_ids IS NOT NULL THEN SIZE(city_ids) ELSE 0 END)=0
+                   AND (CASE WHEN customer_ids IS NOT NULL THEN SIZE(customer_ids) ELSE 0 END)=0
+                   AND service_fee_type=0))
+         THEN 0 ELSE 1 END AS is_dnt,
+    tags,
+    ROW_NUMBER() OVER (PARTITION BY offer_id ORDER BY dt DESC,hr DESC,updated_at DESC) AS rn
+    FROM prod.streams_delta.offer_crud_event
+    WHERE dt>='2026-03-01'
+    ) base
+    LATERAL VIEW OUTER EXPLODE(base.tags) f AS tag
+    WHERE base.rn=1
+    GROUP BY offer_id, orion_lock, is_dnt
+    ),
+
 post_metrics as (
     select dt,
     store_id,
@@ -117,7 +140,10 @@ post_metrics as (
     sum(gmv) as gmv,
     sum(cdgmv) as cdgmv,
     sum(rdgmv) as rdgmv,
-    sum(sdgmv) as sdgmv
+    sum(sdgmv) as sdgmv,
+    sum(nbh_cdgmv) as nbh_cdgmv,
+    sum(nbh_sdgmv) as nbh_sdgmv,
+    sum(nbh_rdgmv) as nbh_rdgmv
     from
     (SELECT a.dt,
     a.restaurant_id AS store_id,
@@ -126,13 +152,19 @@ post_metrics as (
     customer_id,
     SUM(COALESCE(a.store_discount, 0))  AS rdgmv,
     SUM(COALESCE(a.swiggy_discount, 0)) AS sdgmv,
-    SUM(COALESCE(a.store_discount, 0))+ SUM(COALESCE(a.swiggy_discount, 0)) as cdgmv
+    SUM(COALESCE(a.store_discount, 0))+ SUM(COALESCE(a.swiggy_discount, 0)) as cdgmv,
+
+    SUM(case when coalesce(is_nbh,0)= 1 then  COALESCE(a.store_discount, 0) end )  AS nbh_rdgmv,
+    SUM(case when coalesce(is_nbh,0)= 1 then COALESCE(a.swiggy_discount, 0) end ) AS nbh_sdgmv,
+    SUM(case when coalesce(is_nbh,0)= 1 then COALESCE(a.store_discount, 0) end)+ SUM(case when coalesce(is_nbh,0)= 1 then COALESCE(a.swiggy_discount, 0) end) as nbh_cdgmv
     FROM prod.analytics_prod.cp_order_offer a
     -- join fact.dp_order_fact b on a.order_id = b.order_id and a.dt = b.dt
 join (select dt , order_id, order_restaurant_bill as gmv_total, user_id as customer_id
 from transformer.uoms_food_orders 
 where dt in ('2026-08-21', '2026-08-28') --===== PLEASE CHANGE THE DATE HERE==============
 and (toing_order_flag = 0 or toing_order_flag is null)) b on a.order_id = b.order_id and a.dt = b.dt
+left join offer_lock_meta c on coalesce(a.offer_id,0) = c.offer_id
+
 where to_date(a.dt) in('2026-08-21', '2026-08-28') --==== PLEASE CHANGE THE HR AND DATE HERE=========
 and a.hr <= 14 --==== PLEASE CHANGE THE HR HERE=========
 and a.order_status = 'completed'
@@ -150,7 +182,10 @@ sum(discounted_orders) as discounted_orders,
 sum(gmv) as gmv,
 sum(cdgmv) as cdgmv,
 sum(sdgmv) as sdgmv,
-sum(rdgmv) as rdgmv
+sum(rdgmv) as rdgmv,
+sum(nbh_cdgmv) as nbh_cdgmv,
+sum(nbh_sdgmv) as nbh_sdgmv,
+sum(nbh_rdgmv) as nbh_rdgmv
 from rid_list a
 join post_metrics b on a.store_id = b.store_id and a.as_of_dt = b.dt
 left join customer_tiers c on b.customer_id = c.customer_id
