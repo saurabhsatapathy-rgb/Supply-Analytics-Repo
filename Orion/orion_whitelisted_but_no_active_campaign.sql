@@ -20,7 +20,6 @@ select distinct store_id
         absolute_sdgmv_budget,
         updated_by,
         smart_discount_enabled,
-        updated_by,
         from_unixtime(updated_at) as updated_at,
         to_date(from_unixtime(updated_at)) as updated_at_dt,
         to_date(from_unixtime(created_at)) as created_on,
